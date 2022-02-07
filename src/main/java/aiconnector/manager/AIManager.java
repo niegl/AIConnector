@@ -3,6 +3,7 @@ package aiconnector.manager;
 import aiconnector.connector.AIConnector;
 import aiconnector.connector.AIRectangle;
 import aiconnector.utils.tuple.Tuple;
+import lombok.Getter;
 
 import java.awt.*;
 import java.util.Collections;
@@ -40,6 +41,7 @@ public class AIManager implements AIManagerItf {
     /**
      * 方便进行图元的查询
      */
+    @Getter
     ConcurrentHashMap<Integer, AIRectangle> _mapI2Rect = new ConcurrentHashMap<>();
     /**
      * 存储图元冲突

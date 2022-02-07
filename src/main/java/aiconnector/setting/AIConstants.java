@@ -20,6 +20,10 @@ public interface AIConstants {
     int BARRIER_SPACE = 10;
     int POINT2EDGE_GAP = 10;
     /**
+     * 如果存在线冲突，则尝试解决冲突的最大次数
+      */
+    int MAX_RETRY_TIMES = 6;
+    /**
      * 设置是否在完成路径搜索后对路径进行优化(线路合并)
      */
     boolean optimize = false;

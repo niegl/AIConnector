@@ -19,9 +19,8 @@ public enum AIDirection {
 	OVERLAP (0, 0 ),		//重叠
 	UNKOWN (Integer.MAX_VALUE, Integer.MAX_VALUE); //
 
-	@Getter
-    private int x;
-    @Getter
-    private int y;
+
+    private final int x;
+    private final int y;
 
 }

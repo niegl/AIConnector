@@ -6,26 +6,26 @@ import static aiconnector.connector.TRAP_TYPE.*;
  * 利用状态机原理，判定陷阱类型
  */
 public class TrapData {
-    private TRAP_TYPE _trap_type;
+    TRAP_TYPE _trap_type;
     /**
      * left:上/下的左边；up:左/右的上边
      */
-    long _UpOrLeft;
+    int _UpOrLeft;
     /**
      * right:上/下的右边；down:左/右下边
      */
-    long _DownOrRight;
+    int _DownOrRight;
     /**
      * 障碍的最近边，也就是前进距离
      */
-    private long _forward;
+    int _forward;
 
-    public TrapData(long _forward) {
+    public TrapData(int _forward) {
         this._trap_type = TRAP_NONE;
         this._UpOrLeft = this._DownOrRight = this._forward = _forward;
     }
 
-    public TrapData clone(long forward) { return new TrapData(forward); }
+    public TrapData clone(int forward) { return new TrapData(forward); }
 
     /**
      * 为了产生一个障碍检测步骤缩小走形最大距离
@@ -40,7 +40,7 @@ public class TrapData {
      * @param UpOrLeft
      * @param DownOrRight
      */
-    public void transformByMin( long UpOrLeft,  long DownOrRight) {
+    public void transformByMin( int UpOrLeft,  int DownOrRight) {
         transform(UpOrLeft < _UpOrLeft, DownOrRight < _DownOrRight, UpOrLeft, DownOrRight);
     }
 
@@ -49,11 +49,11 @@ public class TrapData {
      * @param UpOrLeft
      * @param DownOrRight
      */
-    public void transformByMax( long UpOrLeft,  long DownOrRight) {
+    public void transformByMax( int UpOrLeft,  int DownOrRight) {
         transform(UpOrLeft > _UpOrLeft, DownOrRight > _DownOrRight, UpOrLeft, DownOrRight);
     }
 
-    private void transform(boolean UpOrLeftComapre, boolean DownOrRightComapre, long UpOrLeft, long DownOrRight) {
+    private void transform(boolean UpOrLeftComapre, boolean DownOrRightComapre, int UpOrLeft, int DownOrRight) {
         switch (_trap_type)
         {
             case TRAP_NONE:
