@@ -9,12 +9,11 @@ import aiconnector.utils.tuple.Tuple;
 import lombok.Getter;
 
 import java.awt.*;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -29,72 +28,86 @@ import static java.util.logging.Level.INFO;
 
 
 public class AIConnector {
-    /** 使用java自带的log工具 */
+
+    /**
+     * 使用java自带的log工具
+     */
     private static final Logger logger = Logger.getLogger(AIConnector.class.getName());
     static {
         logger.setLevel(INFO);
     }
+
     /**
-     * 连线上位置点集合
+     * 连线上位置点集合--多路搜索的情况下，每个路径不同，比对后去最优路径进行赋值。
      */
     @Getter
     private final CopyOnWriteArrayList<Point> _route = new CopyOnWriteArrayList<>();
-
-    @Getter
-    private int _connector_id = 0;
+    /**
+     * 初始目标点-多路搜索的情况下，每个线程的终点可能不同。
+     */
+    private final AtomicReference<Point> _endPoint = new AtomicReference<Point>();
     /**
      * 唯一代表这条连线的id
      */
+    @Getter
+    private final int _connector_id;
+
     private static final AtomicInteger  _connector_atomic = new AtomicInteger(0);
 
     /**
      * 源、目标图元
      */
-    private AtomicReference<AIRectangle> _srcRect = new AtomicReference<AIRectangle>();
-    private AtomicReference<AIRectangle> _dstRect = new AtomicReference<AIRectangle>();
+    private final AIRectangle _srcRect;
+    private final AIRectangle _dstRect;
 
     private final ReadWriteLock _readWriteLock = new ReentrantReadWriteLock();
-    /**
-     * 初始目标点
-     */
-    private AtomicReference<Point> _endPoint = new AtomicReference<Point>();
+
 
     public AIConnector(AIRectangle _srcRect, AIRectangle _dstRect) {
         _connector_id = _connector_atomic.incrementAndGet();
-        this._srcRect.set(_srcRect);
-        this._dstRect.set(_dstRect);
+        this._srcRect = _srcRect;
+        this._dstRect = _dstRect;
     }
 
     /**
      * 主入口，搜索路径
-     * @param lpSrcRect 源图元
-     * @param lpDstRect 目标图元
      * @return 路径点集合
      */
-    List<Point> search_route(Rectangle lpSrcRect, Rectangle lpDstRect) {
-        synchronized (this) {
-            this._srcRect.set(new AIRectangle(lpSrcRect));
-            this._dstRect.set(new AIRectangle(lpDstRect));
-        }
+    List<Point> search_route() {
 
         Objects.requireNonNull(_srcRect);
         Objects.requireNonNull(_dstRect);
-        logger.info("------------------------------------>>>[搜索开始]<<<-------------------------------------");
-        AIDirection direction = init_direction(lpSrcRect, lpDstRect);
+
+        AIDirection direction = init_direction(_srcRect, _dstRect);
         if (direction.equals(UNKOWN)) {
             return get_route();
         }
-        Triple<AIDirection, Point, Point> guid = init_point(direction, _srcRect.get(), _dstRect.get());
 
-        _route.add(guid.b);
+        ArrayList<Point> route = new ArrayList<>();
+        Triple<AIDirection, Point, Point> guid = init_point(direction, _srcRect, _dstRect);
+        route.add(guid.b);
+        _endPoint.set(guid.c);
 
-        processPoints(guid.b, direction,new Tuple<>(null,null),new Tuple<>(null,null));
+        logger.info("------------------------------------>>>[搜索开始]<<<-------------------------------------");
+        processPoints(route, guid.b, direction,new Tuple<>(null,null),new Tuple<>(null,null));
+
+        _dstRect.insert_or_update_anchor_point(_endPoint.get(),get_connector_id());
 
         logger.info("------------------------------------>>>[搜索结束]<<<-------------------------------------");
+        _route.clear();
+        _route.addAll(route);
         return get_route();
     }
 
-    private void processPoints(Point startPoint, AIDirection direction,
+    /**
+     * 行进主入口
+     * @param route 已走过的路径点
+     * @param startPoint 当前起始点
+     * @param direction 当前行进方向
+     * @param parallelBarrierTuple 当前平行障碍，用来计算当前绕障需最远走行距离
+     * @param prevParallelBarrierTuple 上一步平行障碍。在没有平行障碍的情况下，用来计算当前绕障需最远走行距离
+     */
+    private void processPoints(ArrayList<Point> route, Point startPoint, AIDirection direction,
                                Tuple<AIRectangle, TrapData> parallelBarrierTuple,
                                Tuple<AIRectangle, TrapData> prevParallelBarrierTuple) {
         // 迷路了就回家吧
@@ -105,29 +118,93 @@ public class AIConnector {
         }
 
         if (direction == UP)
-            processUp(startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+            processUp(route, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
         else if (direction == DOWN)
-            processDown(startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+            processDown(route, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
         else if (direction == LEFT)
-            processLeft(startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+            processLeft(route, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
         else if (direction == RIGHT)
-            processRight(startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
-        else if (direction == LEFT_UP)
-        {
+            processRight(route, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+        else {
+            ArrayList<Point> route1 = (ArrayList<Point>) route.clone();
+            ArrayList<Point> route2 = (ArrayList<Point>) route.clone();
+            CountDownLatch countDownLatch = new CountDownLatch(2);
+            ExecutorService threadPool = Executors.newFixedThreadPool(2);
+            if (direction == LEFT_UP) {
+                threadPool.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        processLeft(route1, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+                        countDownLatch.countDown();
+                    }
+                });
+                threadPool.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        processUp(route2, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+                        countDownLatch.countDown();
+                    }
+                });
+            } else if (direction == LEFT_DOWN) {
+                threadPool.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        processLeft(route1, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+                        countDownLatch.countDown();
+                    }
+                });
+                threadPool.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        processDown(route2, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+                        countDownLatch.countDown();
+                    }
+                });
+            } else if (direction == RIGHT_UP) {
+                threadPool.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        processRight(route1, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+                        countDownLatch.countDown();
+                    }
+                });
+                threadPool.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        processUp(route2, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+                        countDownLatch.countDown();
+                    }
+                });
+            } else if (direction == RIGHT_DOWN) {
+                threadPool.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        processRight(route1, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+                        countDownLatch.countDown();
+                    }
+                });
+                threadPool.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        processDown(route2, startPoint, parallelBarrierTuple, prevParallelBarrierTuple);
+                        countDownLatch.countDown();
+                    }
+                });
+            } else {
+                countDownLatch.countDown();
+                countDownLatch.countDown();
+            }
+            try {
+                countDownLatch.await();
+                threadPool.shutdown();
+                route = route_length(route1) < route_length(route2)? route1:route2;
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
-        else if (direction == LEFT_DOWN)
-        {
-        }
-        else if (direction == RIGHT_UP)
-        {
-        }
-        else if (direction == RIGHT_DOWN)
-        {
-        }
-
     }
 
-    private void processUp(Point startPoint,
+    private void processUp(ArrayList<Point> route, Point startPoint,
                            Tuple<AIRectangle, TrapData> parallelBarrierTuple,
                            Tuple<AIRectangle, TrapData> prevParallelBarrierTuple) {
         Point newStartPoint = (Point) startPoint.clone();
@@ -146,7 +223,7 @@ public class AIConnector {
 
 //region 只考虑障碍的情况下，计算最远距离
         // 没有障碍
-        AIRectangle targetRect = _dstRect.get();
+        AIRectangle targetRect = _dstRect;
         if (null == barrier)
         {
             // 没有平行障碍
@@ -154,8 +231,8 @@ public class AIConnector {
             {
                 if (startPoint.x >= targetRect.x && startPoint.x <= targetRect.right)
                 {
-                    _endPoint.set(new Point(startPoint.x,targetRect.bottom));
-                    _route.add(_endPoint.get());
+//                    _endPoint.set(new Point(startPoint.x,targetRect.bottom));
+                    route.add(new Point(startPoint.x,targetRect.bottom));
                     return;
                 }
             }
@@ -234,12 +311,12 @@ public class AIConnector {
 
         newStartPoint = get_point_not_conincdence(UP, newStartPoint, barrier, nextDirection, parallelBarrier, parallelInverse_trap);
 
-        _route.add(newStartPoint);
-        processPoints(newStartPoint, nextDirection, Tuple.of(barrier, inverse_trap), parallelBarrierTuple);
+        route.add(newStartPoint);
+        processPoints(route, newStartPoint, nextDirection, Tuple.of(barrier, inverse_trap), parallelBarrierTuple);
 
     }
 
-    private void processDown(Point startPoint,
+    private void processDown(ArrayList<Point> route, Point startPoint,
                              Tuple<AIRectangle, TrapData> parallelBarrierTuple,
                              Tuple<AIRectangle, TrapData> prevParallelBarrierTuple) {
         Point newStartPoint = (Point) startPoint.clone();
@@ -258,7 +335,7 @@ public class AIConnector {
 
 //region 只考虑水平障碍的情况下，计算最远距离
         // 没有障碍
-        AIRectangle targetRect = _dstRect.get();
+        AIRectangle targetRect = _dstRect;
         if (null == barrier)
         {
             // 没有平行障碍
@@ -266,8 +343,8 @@ public class AIConnector {
             {
                 if (startPoint.x >= targetRect.x && startPoint.x <= targetRect.right)
                 {
-                    _endPoint.set(new Point(startPoint.x,targetRect.y));
-                    _route.add(_endPoint.get());
+//                    _endPoint.set(new Point(startPoint.x,targetRect.y));
+                    route.add(new Point(startPoint.x,targetRect.y));
                     return;
                 }
             }
@@ -346,12 +423,12 @@ public class AIConnector {
 
         newStartPoint = get_point_not_conincdence(DOWN, newStartPoint, barrier, nextDirection, parallelBarrier, parallelInverse_trap);
 
-        _route.add(newStartPoint);
-        processPoints(newStartPoint, nextDirection, Tuple.of(barrier, inverse_trap), parallelBarrierTuple);
+        route.add(newStartPoint);
+        processPoints(route, newStartPoint, nextDirection, Tuple.of(barrier, inverse_trap), parallelBarrierTuple);
 
     }
 
-    private void processLeft(Point startPoint,
+    private void processLeft(ArrayList<Point> route, Point startPoint,
                              Tuple<AIRectangle, TrapData> parallelBarrierTuple,
                              Tuple<AIRectangle, TrapData> prevParallelBarrierTuple) {
         Point newStartPoint = (Point) startPoint.clone();
@@ -376,11 +453,11 @@ public class AIConnector {
             // 没有平行障碍
             if (null == parallelBarrier)
             {
-                AIRectangle dst = _dstRect.get();
+                AIRectangle dst = _dstRect;
                 if (startPoint.y >= dst.y && startPoint.y <= dst.bottom)
                 {
-                    _endPoint.set(new Point(dst.right,startPoint.y));
-                    _route.add(_endPoint.get());
+//                    _endPoint.set(new Point(dst.right,startPoint.y));
+                    route.add(new Point(dst.right,startPoint.y));
                     return;
                 }
             }
@@ -460,12 +537,12 @@ public class AIConnector {
 
         newStartPoint = get_point_not_conincdence(LEFT, newStartPoint, barrier, nextDirection, parallelBarrier, parallelInverse_trap);
 
-        _route.add(newStartPoint);
-        processPoints(newStartPoint, nextDirection, Tuple.of(barrier, inverse_trap), parallelBarrierTuple);
+        route.add(newStartPoint);
+        processPoints(route, newStartPoint, nextDirection, Tuple.of(barrier, inverse_trap), parallelBarrierTuple);
 
     }
 
-    private void processRight(Point startPoint,
+    private void processRight(ArrayList<Point> route, Point startPoint,
                               Tuple<AIRectangle, TrapData> parallelBarrierTuple,
                               Tuple<AIRectangle, TrapData> prevParallelBarrierTuple) {
         Point newStartPoint = (Point) startPoint.clone();
@@ -484,7 +561,7 @@ public class AIConnector {
 
 //region 只考虑水平障碍的情况下，计算最远距离
         // 没有障碍
-        AIRectangle targetRect = _dstRect.get();
+        AIRectangle targetRect = _dstRect;
         if (null == barrier)
         {
             // 没有平行障碍
@@ -492,8 +569,8 @@ public class AIConnector {
             {
                 if (startPoint.y >= targetRect.y && startPoint.y <= targetRect.bottom)
                 {
-                    _endPoint.set(new Point(targetRect.x,startPoint.y));
-                    _route.add(_endPoint.get());
+//                    _endPoint.set(new Point(targetRect.x,startPoint.y));
+                    route.add(new Point(targetRect.x,startPoint.y));
                     return;
                 }
             }
@@ -573,8 +650,8 @@ public class AIConnector {
         // 下一步能走多远，需要估算一个值，进而判断是否存在“线冲突”,如果存在则调节当前点(当前的机制是缩短走行路径)
         newStartPoint = get_point_not_conincdence(RIGHT, newStartPoint, barrier, nextDirection, parallelBarrier, parallelInverse_trap);
 
-        _route.add(newStartPoint);
-        processPoints(newStartPoint, nextDirection, Tuple.of(barrier, inverse_trap), parallelBarrierTuple);
+        route.add(newStartPoint);
+        processPoints(route, newStartPoint, nextDirection, Tuple.of(barrier, inverse_trap), parallelBarrierTuple);
 
     }
 
@@ -726,13 +803,7 @@ public class AIConnector {
             int right = spBarrier_inflate.x + spBarrier_inflate.width;
             int bottom = spBarrier_inflate.y + spBarrier_inflate.height;
 
-            Rectangle cloneDst = null;
-            try {
-                _readWriteLock.readLock().lock();
-                cloneDst = (Rectangle) _dstRect.get().clone();
-            } finally {
-                _readWriteLock.readLock().unlock();
-            }
+            Rectangle cloneDst = _dstRect;
 
             final int spFrontBottom = spFront.y + spFront.height;
             final int spFrontRight = spFront.x + spFront.width;
@@ -865,7 +936,7 @@ public class AIConnector {
         // 如果检测到的这个障碍和目标图元重叠了，那么不算障碍
         if (barrier != null)
         {
-            if (true == barrier.intersects(_dstRect.get())) barrier = null;
+            if (barrier.intersects(_dstRect)) barrier = null;
         }
         // 如果存在障碍，那么检测是否存在陷阱
         TrapData trap_data = new TrapData(0);
@@ -906,7 +977,7 @@ public class AIConnector {
 //region 循环所有图元，检查障碍
         for (var C : mapI2Rect.values())
         {
-            if (C.equals(_srcRect.get()) || C.equals(_dstRect.get()))
+            if (C.equals(_srcRect) || C.equals(_dstRect))
             {
                 continue;
             }
@@ -936,7 +1007,7 @@ public class AIConnector {
 //region 循环所有图元，检查障碍
         for (var C : mapI2Rect.values())
         {
-            if (C.equals(_srcRect.get()) || C.equals(_dstRect.get()))
+            if (C.equals(_srcRect) || C.equals(_dstRect))
             {
                 continue;
             }
@@ -966,7 +1037,7 @@ public class AIConnector {
 //region 循环所有图元，检查障碍
         for (var C : mapI2Rect.values())
         {
-            if (C.equals(_srcRect.get()) || C.equals(_dstRect.get()))
+            if (C.equals(_srcRect) || C.equals(_dstRect))
             {
                 continue;
             }
@@ -996,7 +1067,7 @@ public class AIConnector {
 //region 循环所有图元，检查障碍
         for (var C : mapI2Rect.values())
         {
-            if (C.equals(_srcRect.get()) || C.equals(_dstRect.get()))
+            if (C.equals(_srcRect) || C.equals(_dstRect))
             {
                 continue;
             }
@@ -1101,7 +1172,7 @@ public class AIConnector {
      * @param lpDstRect
      * @return
      */
-    private static AIDirection init_direction(Rectangle lpSrcRect, Rectangle lpDstRect) {
+    private static AIDirection init_direction(AIRectangle lpSrcRect, AIRectangle lpDstRect) {
         var xSrc = lpSrcRect.x;
         var ySrc = lpSrcRect.y;
         var widthSrc = lpSrcRect.width;
@@ -1121,35 +1192,35 @@ public class AIConnector {
 
         // 垂直方向计算
         if (abs(centerSrc.x - centerDst.x) <= (widthSrc/2 + widthDst/2)) {
-            if ((ySrc + heightSrc) < yDst) {
+            if (lpSrcRect.bottom < yDst) {
                 return DOWN;
             }
-            else if ((yDst + heightDst) < ySrc) {
+            else if (lpDstRect.bottom < ySrc) {
                 return UP;
             }
         }
         // 水平方向计算
         else if (abs(centerSrc.y - centerDst.y) <= (heightSrc/2 + heightDst/2)) {
-            if ((xSrc + widthSrc) < xDst) {
+            if (lpSrcRect.right < xDst) {
                 return RIGHT;
             }
-            else if ((xDst + widthDst) < xSrc) {
+            else if (lpDstRect.right < xSrc) {
                 return LEFT;
             }
         }
-        else if ((xDst + widthDst) < xSrc) {
-            if ((yDst + heightDst) < ySrc) {
+        else if (lpDstRect.right < xSrc) {
+            if (lpDstRect.bottom < ySrc) {
                 return LEFT_UP;
             }
-            else if (yDst > (ySrc + heightSrc)) {
+            else if (yDst > lpSrcRect.bottom) {
                 return LEFT_DOWN;
             }
         }
-        else if ((xSrc+widthSrc)<xDst) {
-            if ((ySrc + heightSrc) < yDst) {
+        else if (lpSrcRect.right < xDst) {
+            if (lpSrcRect.bottom < yDst) {
                 return RIGHT_DOWN;
             }
-            else if (ySrc > (yDst + heightDst)) {
+            else if (ySrc > lpDstRect.bottom) {
                 return RIGHT_UP;
             }
         }
@@ -1164,18 +1235,17 @@ public class AIConnector {
      * 初始化开始、终止点坐标.
      * @param lpSrcRect
      * @param lpDstRect
-     * @return
+     * @return <方向，开始点坐标，终止点坐标>
      */
     private Triple<AIDirection,Point,Point> init_point(AIDirection direction, AIRectangle lpSrcRect, AIRectangle lpDstRect) {
 
         // 终点可以简单初始化为中心点（最后一步会进行修正）
         Point endPoint = new Point((int) lpDstRect.getCenterX(), (int) lpDstRect.getCenterY());
-        Point startPoint = new Point((int) lpSrcRect.getCenterX(), (int) lpSrcRect.getCenterY());
 
-        int up = (int) max(lpSrcRect.getY(), lpDstRect.getY());
-        int down = (int) min(lpSrcRect.getY()+lpSrcRect.getHeight(), lpDstRect.getY()+lpDstRect.getHeight());
-        int left = (int) max(lpSrcRect.getX(), lpDstRect.getX());
-        int right = (int) min(lpSrcRect.getX()+lpSrcRect.getWidth(), lpDstRect.getX()+lpDstRect.getWidth());
+        int up = max(lpSrcRect.y, lpDstRect.y);
+        int down = min(lpSrcRect.bottom, lpDstRect.bottom);
+        int left = max(lpSrcRect.x, lpDstRect.x);
+        int right = min(lpSrcRect.right, lpDstRect.right);
 
         boolean horizontal = down >= up;	// 水平方向是否相交
         boolean vertical = right >= left;	// 垂直方向是否相交
@@ -1192,7 +1262,7 @@ public class AIConnector {
             }
             else if (RIGHT == direction)
             {
-                guide = lpSrcRect.get_free_anchor(connectorId, new Point(lpSrcRect.x+lpSrcRect.width, up), RIGHT,false);
+                guide = lpSrcRect.get_free_anchor(connectorId, new Point(lpSrcRect.right, up), RIGHT,false);
             }
         }
         else if (vertical)
@@ -1203,7 +1273,7 @@ public class AIConnector {
             }
             else if (DOWN == direction)
             {
-                guide = lpSrcRect.get_free_anchor( connectorId, new Point(left, lpSrcRect.y+lpSrcRect.height), DOWN, true);
+                guide = lpSrcRect.get_free_anchor( connectorId, new Point(left, lpSrcRect.bottom), DOWN, true);
             }
         }
         else
@@ -1218,21 +1288,53 @@ public class AIConnector {
             }
             else if (RIGHT_UP == direction)
             {
-                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.x+lpSrcRect.width, lpSrcRect.y+lpSrcRect.height/2), RIGHT, true);
+                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.right, lpSrcRect.y+lpSrcRect.height/2), RIGHT, true);
             }
             else if (RIGHT_DOWN == direction)
             {
-                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.x+lpSrcRect.width, lpSrcRect.y+lpSrcRect.height/2), RIGHT, false);
+                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.right, lpSrcRect.y+lpSrcRect.height/2), RIGHT, false);
             }
         }
 
         // solve the overlap problem
         if (direction == OVERLAP)
         {
-            guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.x+lpSrcRect.width, lpSrcRect.y+lpSrcRect.height/2), RIGHT, false);
+            guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.right, lpSrcRect.y+lpSrcRect.height/2), RIGHT, false);
         }
 
         assert guide != null;
         return new Triple<>(guide.b,guide.a,endPoint);
+    }
+
+    private final long route_length(List<Point> route)
+    {
+        long total_length = 0;
+
+        // 至少需要两个点
+        if (route.size() < 2)
+        {
+            return 0L;
+        }
+
+        // 检查是否有效路径:最后两个点的x和y至少有一个是相等的.
+        Point prev = route.get(0);
+        // 移动到第二个
+        for (int it = 1; it < route.size(); it++)
+        {
+            Point cur = route.get(it);
+            if (prev.x == cur.x)
+            {
+                total_length += abs(prev.y - cur.y);
+            }
+            else if(prev.y == cur.y)
+            {
+                total_length += abs(prev.x - cur.x);
+            }
+            else {
+                return 0;
+            }
+            prev = cur;
+        }
+        return total_length;
     }
 }
