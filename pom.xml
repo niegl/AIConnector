@@ -6,7 +6,7 @@
 
     <groupId>flow.designer</groupId>
     <artifactId>aiconnector</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0</version>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -24,7 +24,7 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>RELEASE</version>
+            <version>5.8.2</version>
             <scope>test</scope>
         </dependency>
 

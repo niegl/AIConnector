@@ -4,22 +4,28 @@ import aiconnector.connector.AIConnector;
 import aiconnector.connector.AIRectangle;
 import aiconnector.utils.tuple.Tuple;
 import lombok.Getter;
+import lombok.NonNull;
 
 import java.awt.*;
-import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.function.Function;
 
 public class AIManager implements AIManagerItf {
     private AIManager() {}
-    //静态内部类,包含一个静态属性：Singleton
+
+    /**
+     * 静态内部类,包含一个静态属性：Singleton
+     */
     private static class SingletonInstance {
         private static final AIManager INSTANCE = new AIManager();
     }
-    //对外公有的静态方法，直接返回SingletonInstance.INSTANCE
+    /**
+     * 对外公有的静态方法，直接返回SingletonInstance.INSTANCE
+     */
     public static synchronized AIManager getInstance() {
         return SingletonInstance.INSTANCE;
     }
@@ -35,278 +41,366 @@ public class AIManager implements AIManagerItf {
     };
 
     /**
-     * 根据存放顺序,存储所有的图元
-     */
-    CopyOnWriteArrayList<Rectangle> m_rects = new CopyOnWriteArrayList<>();
-    /**
-     * 方便进行图元的查询
+     * 所有的<b>图元</b>: 表hashCode-> 表图元
      */
     @Getter
-    ConcurrentHashMap<Integer, AIRectangle> _mapI2Rect = new ConcurrentHashMap<>();
+    ConcurrentHashMap<Integer, AIRectangle> mapTableId2Rect = new ConcurrentHashMap<>();
     /**
-     * 存储图元冲突
+     * 所有<b>连线</b>.connectorID-> AIConnector。connectorID的生成规则：Pair.with(hBox, hBox2).hashCode()
      */
-    ConcurrentHashMap<Integer, CopyOnWriteArraySet<AIRectangle>> _mapI2RectOverlap = new ConcurrentHashMap<>();
+    ConcurrentHashMap<Integer, AIConnector> mapLineId2Connector = new ConcurrentHashMap<>();
+    /**
+     * 图元->图元所有<b>连线关系</b>. 表id->表连线id. id的生成规则都是使用的视图对象。<p>
+     * 表id的生成规则：formTemplate的hashcode;
+     */
+    ConcurrentHashMap<Integer, CopyOnWriteArrayList<Integer>> mapTableId2LineIDs = new ConcurrentHashMap<>();
+    /**
+     * 存储图元<b>冲突</b>: 图元-> 冲突图元
+     */
+    ConcurrentHashMap<Integer, CopyOnWriteArraySet<AIRectangle>> mapTableId2Overlaps = new ConcurrentHashMap<>();
+
     /**
      * 存储跟特定图元相关的连线<p>
      * 	参数：<p>
      * 	std::pair<LONG64,LONG64>：<源图元id、目标图元id><p>
      * 	std::vector<AIConnector>: 两个图元之间的连线，不同的连线用AIConnector：：m_uIdentify来区分
+     * @return
      */
-    ConcurrentHashMap<Tuple<Integer,Integer>, CopyOnWriteArrayList<AIConnector>> _mapTuple2Connection = new ConcurrentHashMap<>();
-
-    public CopyOnWriteArraySet<AIRectangle> getOverlap(int table_id) {
-        return _mapI2RectOverlap.get(table_id);
+    public CopyOnWriteArraySet<AIRectangle> getOverlap(Integer table_id) {
+        return mapTableId2Overlaps.get(table_id);
     }
 
+    /**
+     * v2.0添加图元并建立图元关系
+     * @param rectangle 图元
+     * @return true：添加成功
+     */
     @Override
-    public boolean add_rect(int table_id, Rectangle lpSrcRect) {
-        Objects.requireNonNull(lpSrcRect);
-
-        if (_mapI2Rect.putIfAbsent(table_id,new AIRectangle(lpSrcRect,table_id)) == null) {
+    public boolean add_rect(@NonNull AIRectangle rectangle) {
+        int table_id = rectangle.get_table_id();
+        if (mapTableId2Rect.putIfAbsent(table_id,rectangle) == null) {
             // 建立图元关联
-            return refresh_overlap(table_id, REFRESH_REASON.REFRESH_ADD_NEW);
+            return attach_overlap(table_id);
         }
 
         return false;
     }
 
+    /**
+     * v2.0 删除图元并解除关系、删除连线
+     * @param table_id 图元id
+     * @return true：删除成功
+     */
     @Override
-    public boolean delete_rect(int table_id) {
-        AIRectangle removed = _mapI2Rect.remove(table_id);
+    public boolean delete_rect(Integer table_id) {
+        AIRectangle removed = mapTableId2Rect.get(table_id);
         if (removed != null) {
+            // 删除连线
+            CopyOnWriteArrayList<Integer> integers = mapTableId2LineIDs.get(table_id);
+            if (integers != null) {
+                integers.parallelStream().forEach(this::delete_line);
+            }
             // 解除关系
             detach_overlap(table_id);
-            // 删除连线
-            detach_line(removed);
-        }
-
-        return true;
-    }
-
-    Boolean refresh_overlap(int table_id, REFRESH_REASON refresh_type)
-    {
-        // 如果是新加入的图元，则直接建立关系
-        if (REFRESH_REASON.REFRESH_ADD_NEW == refresh_type)
-        {
-            attach_overlap(table_id);
-        }
-        else if (REFRESH_REASON.REFRESH_DELETE == refresh_type)
-        {
-            detach_overlap(table_id);
-        }
-        else if (REFRESH_REASON.REFRESH_MOVE == refresh_type)
-        {
-            detach_overlap(table_id);
-            attach_overlap(table_id);
-        }
-        else {
-            // 自动重分布
-
-        }
-
-        return false;
-    }
-
-    AIRectangle find_rect(int table_id) {        return _mapI2Rect.get(table_id);
-    }
-
-    // 功能：
-    // 1、矩形添加后更新关系
-    // 2、图元位置移动后更新关系
-    // 3、图元删除后更新关系
-    // 4、点击自动重分布后，更新图元位置/更新图元关系?
-    // 返回值：
-    // TRUE: 刷新成功
-    // FALSE:
-    //BOOL refresh_overlap(Rectangle spTempRect, REFRESH_REASON refresh_type);
-    boolean attach_overlap(int table_id)    // 建立关系
-    {
-        var spTempRect = find_rect(table_id);
-        if (spTempRect == null) return true;
-
-        // 循环当前所有图元，建立图元关系
-        for ( AIRectangle spExist : _mapI2Rect.values())
-        {
-            // 跳过自身
-            if (spExist.equals(spTempRect)) continue;
-            // 如果图元重叠,则加入
-            boolean boverlap =  spExist.intersects(spTempRect);
-            if (boverlap)
-            {
-                CopyOnWriteArraySet<AIRectangle> overlaps = _mapI2RectOverlap.getOrDefault(table_id, new CopyOnWriteArraySet<>());
-                overlaps.add(spExist);
-                _mapI2RectOverlap.put(table_id,overlaps);
-            }
+            // 先删除连线在删除图元
+            mapTableId2Rect.remove(table_id);
         }
 
         return true;
     }
 
     /**
+     * 搜索路径
+     * @param src_table_id 源图元
+     * @return 路径（可能为多个）
+     */
+    public List<Tuple<Integer, List<Point>>> searchRoute(int src_table_id)
+    {
+        CopyOnWriteArrayList<Integer> lines = get_connections(src_table_id);
+        if (lines == null) {
+            return null;
+        }
+
+        return lines.parallelStream().map(line -> {
+            AIConnector aiConnector = mapLineId2Connector.get(line);
+            if (aiConnector != null) {
+                List<Point> route = aiConnector.search_route();
+                if (!route.isEmpty()) {
+                    return Tuple.of(aiConnector.get_connector_id(), route);
+                }
+            }
+            return null;
+        }).filter(Objects::nonNull).toList();
+    }
+
+//    Boolean refresh_overlap(int table_id, REFRESH_REASON refresh_type)
+//    {
+//        // 如果是新加入的图元，则直接建立关系
+//        if (REFRESH_REASON.REFRESH_ADD_NEW == refresh_type)
+//        {
+//            attach_overlap(table_id);
+//        }
+//        else if (REFRESH_REASON.REFRESH_DELETE == refresh_type)
+//        {
+//            detach_overlap(table_id);
+//        }
+//        else if (REFRESH_REASON.REFRESH_MOVE == refresh_type)
+//        {
+//            detach_overlap(table_id);
+//            attach_overlap(table_id);
+//        }
+//        else {
+//            // 自动重分布
+//
+//        }
+//
+//        return false;
+//    }
+
+    @Override
+    public Optional<AIRectangle> find_rect(Integer table_id) {
+        return Optional.ofNullable(mapTableId2Rect.get(table_id)) ;
+    }
+
+    /**
+     * v2.0
+     * 功能：
+     * 1、矩形添加后更新关系
+     * 2、图元位置移动后更新关系
+     * 3、图元删除后更新关系
+     * 4、点击自动重分布后，更新图元位置/更新图元关系?
+     * @param table_id
+     * @return TRUE: 刷新成功
+     */
+    boolean attach_overlap(int table_id)    // 建立关系
+    {
+        var spTempRect = find_rect(table_id);
+        if (spTempRect.isEmpty()) return false;
+
+        // 循环当前所有图元，建立图元关系
+        AIRectangle newRectangle = spTempRect.get();
+        mapTableId2Rect.values().parallelStream().forEach(spExist -> {
+            // 跳过自身
+            if (spExist.equals(newRectangle)) return;
+            // 如果图元重叠,则加入
+            boolean boverlap =  spExist.intersects(newRectangle);
+            if (boverlap) {
+                CopyOnWriteArraySet<AIRectangle> overlaps = mapTableId2Overlaps.getOrDefault(table_id, new CopyOnWriteArraySet<>());
+                overlaps.add(spExist);
+                mapTableId2Overlaps.put(table_id,overlaps);
+            }
+        });
+
+        return true;
+    }
+
+    /**
+     * v2.0 <p>
      * 解除table_id与其他图元的关系
      * @param table_id
      * @return
      */
-    boolean detach_overlap(int table_id)
+    boolean detach_overlap(Integer table_id)
     {
-        Rectangle spTempRect = find_rect(table_id);
-        if (spTempRect == null) return true;
+        Optional<AIRectangle> spTempRect = find_rect(table_id);
+        if (spTempRect.isEmpty()) return false;
 
-        // 删除重叠关系
-        CopyOnWriteArraySet<AIRectangle> rc_overlaps = _mapI2RectOverlap.get(table_id);
-        if (rc_overlaps != null) {
-            // 首先解除与他有关系的图元、与他的关系
-            for (AIRectangle overlap : rc_overlaps)
-            {
-                int idByRect = overlap.get_table_id();
-                CopyOnWriteArraySet<AIRectangle> suboverlap = _mapI2RectOverlap.get(idByRect);
-                if (suboverlap == null) {
-                    continue;
-                }
-
-                suboverlap.remove(spTempRect);
-                if (suboverlap.isEmpty()) {
-                    _mapI2RectOverlap.remove(idByRect);
-                }
-            }
-            // 最后解除他的关系
-            _mapI2RectOverlap.remove(table_id);
+        // 不存在重叠关系
+        AIRectangle rectDelete = spTempRect.get();
+        CopyOnWriteArraySet<AIRectangle> rc_overlaps = mapTableId2Overlaps.remove(table_id);
+        if (rc_overlaps == null) {
+            return false;
         }
 
+        // 删除重叠关系
+        rc_overlaps.parallelStream().forEach(overlap -> {
+            int idByRect = overlap.get_table_id();
+            CopyOnWriteArraySet<AIRectangle> suboverlap = mapTableId2Overlaps.get(idByRect);
+            if (suboverlap != null) {
+                suboverlap.remove(rectDelete);
+                if (suboverlap.isEmpty()) {
+                    mapTableId2Overlaps.remove(idByRect);
+                }
+            }
+        });
+
         return true;
+    }
+
+    /**
+     * v2.0
+     * 功能：
+     * 1、删除连线.如果删除连线后，图元不存在任何连线，那么删除图元相关连线。
+     * 2、释放锚点
+     * @param lineId 待删除连线id
+     * @return
+     */
+    public boolean delete_line(Integer lineId) {
+        AIConnector remove = mapLineId2Connector.remove(lineId);
+        // 连线不存在
+        if (remove == null) return false;
+
+        // 获取连线两端的图元，删除图元的这跟线
+        AIRectangle srcRect = remove.get_srcRect();
+        AIRectangle dstRect = remove.get_dstRect();
+
+        return delete_line(lineId, srcRect, dstRect);
+    }
+
+    private boolean delete_line(Integer lineId, @NonNull AIRectangle srcRect, @NonNull AIRectangle dstRect) {
+        CopyOnWriteArrayList<Integer> integersLine = mapTableId2LineIDs.get(srcRect.get_table_id());
+        CopyOnWriteArrayList<Integer> integersLine1 = mapTableId2LineIDs.get(dstRect.get_table_id());
+
+        boolean delete = true;
+        if (integersLine != null) {
+            delete = integersLine.remove(lineId);
+            if (integersLine.isEmpty()) {
+                mapTableId2LineIDs.remove(srcRect.get_table_id());
+            }
+        }
+        if (integersLine1 != null) {
+            delete &= integersLine1.remove(lineId);
+            if (integersLine1.isEmpty()) {
+                mapTableId2LineIDs.remove(dstRect.get_table_id());
+            }
+        }
+
+        // 删除锚点
+        delete_anchor(srcRect, dstRect, lineId);
+        return delete;
     }
 
     // 功能：
     // 1、删除图元后解除与图元相关的连线
     // 2、移动图元后解除先前的连线
+    // 3、释放锚点
     // 返回值：
     // TRUE: 成功
     // FALSE:
-    boolean detach_line(AIRectangle detachRect)    // 解除连线关系
-    {
-        if (null == detachRect)
-        {
+//    boolean delete_line(AIRectangle detachRect)    // 解除连线关系
+//    {
+//        if (null == detachRect)
+//        {
+//            return false;
+//        }
+//
+//        int table_id = detachRect.get_table_id();
+//        CopyOnWriteArrayList<Integer> lineIds = mapTableId2LineIDs.remove(table_id);
+//
+//        Tuple<Integer, Integer> searchKeys = mapTableId2LineIDs.searchKeys(2, new Function<Tuple<Integer, Integer>, Tuple<Integer, Integer>>() {
+//            @Override
+//            public Tuple<Integer, Integer> apply(Tuple<Integer, Integer> integerIntegerTuple) {
+//                if (integerIntegerTuple.a.equals(table_id) || integerIntegerTuple.b.equals(table_id)) {
+//                    return integerIntegerTuple;
+//                }
+//                return null;
+//            }
+//        });
+//
+//        if (searchKeys != null) {
+//            // 释放锚点
+//            mapTuple2Connection.get(searchKeys).parallelStream().forEach(aiConnector -> delete_line(searchKeys.a, searchKeys.b, aiConnector.get_connector_id()));
+//            mapTuple2Connection.remove(searchKeys);
+//        }
+//
+//        return true;
+//    }
+
+    /**
+     * 绑定路径到图元，路径由使用者提供，保证路径id的唯一和持久一致；
+     * @param spConnector
+     * @return
+     */
+    @Override
+    public boolean add_line(@NonNull AIConnector spConnector) {
+        if (spConnector.get_srcRect() == null
+                || spConnector.get_dstRect() == null) {
             return false;
         }
 
-        int table_id = detachRect.get_table_id();
-        Tuple<Integer, Integer> searchKeys = _mapTuple2Connection.searchKeys(2, new Function<Tuple<Integer, Integer>, Tuple<Integer, Integer>>() {
-            @Override
-            public Tuple<Integer, Integer> apply(Tuple<Integer, Integer> integerIntegerTuple) {
-                if (integerIntegerTuple.a.equals(table_id) || integerIntegerTuple.b.equals(table_id)) {
-                    return integerIntegerTuple;
-                }
-                return null;
-            }
-        });
+        int connectorId = spConnector.get_connector_id();
+        mapLineId2Connector.put(connectorId, spConnector);
 
-        if (searchKeys != null) {
-            _mapTuple2Connection.remove(searchKeys);
+        // 添加到 表->连线
+        int srcTableID = spConnector.get_srcRect().get_table_id();
+        int dstTableID = spConnector.get_dstRect().get_table_id();
+        CopyOnWriteArrayList<Integer> orDefault = mapTableId2LineIDs.getOrDefault(srcTableID, new CopyOnWriteArrayList<>());
+        if (orDefault.isEmpty()) {
+            mapTableId2LineIDs.put(srcTableID, orDefault);
         }
+        orDefault.add(connectorId);
+        CopyOnWriteArrayList<Integer> orDefault2 = mapTableId2LineIDs.getOrDefault(dstTableID, new CopyOnWriteArrayList<>());
+        if (orDefault2.isEmpty()) {
+            mapTableId2LineIDs.put(dstTableID, orDefault2);
+        }
+        orDefault2.add(connectorId);
 
         return true;
     }
 
-    // 功能：
-    // 1、建立连线路径后将其绑定图元
-    // 2、移动图元后绑定将新路径绑定到图元（情况1的延伸）
-    // 返回值：
-    // TRUE: 成功
-    // FALSE:
-    boolean attach_line(AIRectangle spSrcRect, AIRectangle spDstRect, AIConnector spConnector) {
-        int srcTableId = spSrcRect.get_table_id();
-        int dstTableId = spDstRect.get_table_id();
-
-        CopyOnWriteArrayList<AIConnector> connectors  = get_connection(srcTableId, dstTableId);
-        if (connectors != null)
-        {
-            connectors.add(spConnector);
-        }
-        else {
-            _mapTuple2Connection.put(Tuple.of(srcTableId,dstTableId), new CopyOnWriteArrayList<AIConnector>(Collections.singleton(spConnector)));
-        }
-
-        return true;
+    public boolean add_line(@NonNull AIRectangle srcRect, @NonNull AIRectangle dstRect, @NonNull Integer lineId) {
+        return add_line(new AIConnector(srcRect, dstRect, lineId));
     }
 
-    // 功能：
-    // 1、删除连线
-    // 返回值：
-    // TRUE: 成功
-    // FALSE:
+    /**
+     * v2.0 删除连线
+     * @param line_id 连线id
+     * @param srcId 源图元
+     * @param dstId 目标图元
+     * @return
+     */
     @Override
-    public boolean delete_line(int srcId, int dstId, int line_id) {
-
+    public boolean delete_line(Integer line_id, int srcId, int dstId) {
         var spSrcRect = find_rect(srcId);
         var spDstRect = find_rect(dstId);
-
-        CopyOnWriteArrayList<AIConnector> connectors = get_connection(srcId, dstId);
-        if (connectors != null) {
-            for (AIConnector conn :
-                    connectors) {
-                if (conn.get_connector_id() == line_id) {
-                    delete_anchor(spSrcRect,spDstRect,conn);
-                    connectors.remove(conn);
-                    break;
-                }
-            }
-
-            if (connectors.isEmpty()) {
-                _mapTuple2Connection.remove(Tuple.of(srcId,dstId));
-                _mapTuple2Connection.remove(Tuple.of(dstId,srcId));
-            }
+        if (spSrcRect.isEmpty() || spDstRect.isEmpty()) {
+            return false;
         }
 
-        return true;
+        return delete_line(line_id, spSrcRect.get(), spDstRect.get());
+    }
+
+    /**
+     * v2.0 获取与图元相关的连线
+     * @param table_id 图元id
+     * @return 连线列表
+     */
+    @Override
+    public CopyOnWriteArrayList<Integer> get_connections(Integer table_id) {
+        return mapTableId2LineIDs.get(table_id);
     }
 
     @Override
-    public CopyOnWriteArrayList<AIConnector> get_connection(int src_table_id, int dest_table_id) {
-
-        CopyOnWriteArrayList<AIConnector> aiConnectors = _mapTuple2Connection.get(Tuple.of(src_table_id, dest_table_id));
-        if (aiConnectors != null) {
-            return aiConnectors;
-        }
-
-        aiConnectors = _mapTuple2Connection.get(Tuple.of(dest_table_id, src_table_id));
-        return aiConnectors;
+    public AIConnector get_connection(Integer connection_id) {
+        return mapLineId2Connector.get(connection_id);
     }
 
     @Override
-    public void move_rect(int table_id, Rectangle lpRect)
-    {
-        Rectangle spTempRect = find_rect(table_id);
-        if (spTempRect == null) return;
+    public void move_rect(Integer table_id, @NonNull Rectangle lpRect) {
+        Optional<AIRectangle> spTempRect = find_rect(table_id);
+        if (spTempRect.isEmpty()) return;
 
-        spTempRect.setBounds(lpRect.x, lpRect.y, lpRect.width, lpRect.height);
-
-        // 刷新图元与其他图元的关系
-        refresh_overlap(table_id, REFRESH_REASON.REFRESH_MOVE);
-// 		// 删除图元
-// 		delete_rect(table_id);
-// 		// 添加图元
-// 		add_rect(table_id, lpRect);
-
+ 		// 删除图元
+ 		delete_rect(table_id);
+ 		// 添加图元
+ 		add_rect(new AIRectangle(lpRect, table_id));
     }
 
-    boolean attach_anchor(AIRectangle spSrcRect, AIRectangle spDstRect, AIConnector connector) {
-        CopyOnWriteArrayList<Point> route = connector.get_route();
-        if (!route.isEmpty() && route.size() >= 2)
-        {
-            spSrcRect.insert_or_update_anchor_point(route.get(0), connector.get_connector_id());
-            spDstRect.insert_or_update_anchor_point(route.get(route.size()-1), connector.get_connector_id());
-        }
+    boolean attach_anchor(AIRectangle spSrcRect, Point point, int connectorID) {
+        spSrcRect.insert_or_update_anchor_point(point, connectorID);
         return true;
     }
 
-    boolean delete_anchor(AIRectangle spSrcRect, AIRectangle spDstRect, AIConnector connector) {
-        Objects.requireNonNull(spSrcRect);
-        Objects.requireNonNull(spDstRect);
-        Objects.requireNonNull(connector);
-
-        spSrcRect.detach_anchor_point(connector.get_connector_id());
-        spDstRect.detach_anchor_point(connector.get_connector_id());
+    /**
+     * v2.0 删除锚点。
+     * @param spSrcRect
+     * @param spDstRect
+     * @param lineId 与lineId关联的锚点
+     * @return
+     */
+    boolean delete_anchor(@NonNull AIRectangle spSrcRect, @NonNull AIRectangle spDstRect, Integer lineId) {
+        spSrcRect.detach_anchor_point(lineId);
+        spDstRect.detach_anchor_point(lineId);
 
         return true;
     }

@@ -10,12 +10,21 @@ import java.util.Collection;
 import java.util.Objects;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
 
 import static aiconnector.connector.AIDirection.*;
 import static aiconnector.connector.AIDirection.RIGHT;
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.WARNING;
 
 public class AIRectangle extends Rectangle {
-
+    /**
+     * 使用java自带的log工具
+     */
+    private static final Logger logger = Logger.getLogger(AIRectangle.class.getName());
+    static {
+        logger.setLevel(INFO);
+    }
     @Getter
     @Setter
     private int _table_id;//引用类型
@@ -25,7 +34,7 @@ public class AIRectangle extends Rectangle {
         this._table_id = _table_id;
     }
 
-    public AIRectangle(Rectangle r) {
+    private AIRectangle(Rectangle r) {
         super(r);
     }
 
@@ -51,6 +60,7 @@ public class AIRectangle extends Rectangle {
      * the previous value associated with key, or null if there was no mapping for key
      */
     public Point insert_or_update_anchor_point(Point point, int lineID) {
+        logger.info("attach point: " + point);
         return _anchorLine2Point.put(lineID,point);
     }
 
@@ -62,6 +72,7 @@ public class AIRectangle extends Rectangle {
      * the previous value associated with key, or null if there was no mapping for key
      */
     public Point detach_anchor_point(int lineID) {
+        logger.info("detach point: " + _anchorLine2Point.get(lineID));
         return _anchorLine2Point.remove(lineID);
     }
 
@@ -71,7 +82,7 @@ public class AIRectangle extends Rectangle {
 
         Tuple<Point, AIDirection> guideAnchor = get_next_anchor(connectorID, clonePoint, forward_direction, bInvertPeek);
         //add_anchor_point(point);
-        insert_or_update_anchor_point(guideAnchor.a,connectorID);
+//        insert_or_update_anchor_point(guideAnchor.a, connectorID);
 
         return guideAnchor;
     }
@@ -167,16 +178,14 @@ public class AIRectangle extends Rectangle {
     public boolean check_anchor_available(int uLineIndentify, Point anchorPoint)
     {
         Point point = _anchorLine2Point.get(uLineIndentify);
-        if (point == null) {
-            return true;
-        }
-
-        if (point.equals(anchorPoint)) {
-            return true;
+        if (point != null) {
+            if (point.equals(anchorPoint)) {
+                return true;
+            }
         }
 
         Collection<Point> pointCollection = _anchorLine2Point.values();
-        return pointCollection.contains(anchorPoint);
+        return !pointCollection.contains(anchorPoint);
     }
 
     @Override
