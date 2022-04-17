@@ -23,7 +23,7 @@ public class AIRectangle extends Rectangle {
      */
     private static final Logger logger = Logger.getLogger(AIRectangle.class.getName());
     static {
-        logger.setLevel(INFO);
+        logger.setLevel(WARNING);
     }
     @Getter
     @Setter
@@ -79,10 +79,7 @@ public class AIRectangle extends Rectangle {
     public final Tuple<Point, AIDirection> get_free_anchor(int connectorID, Point startPoint, AIDirection forward_direction, boolean bInvertPeek)
     {
         Point clonePoint = (Point) startPoint.clone();
-
         Tuple<Point, AIDirection> guideAnchor = get_next_anchor(connectorID, clonePoint, forward_direction, bInvertPeek);
-        //add_anchor_point(point);
-//        insert_or_update_anchor_point(guideAnchor.a, connectorID);
 
         return guideAnchor;
     }

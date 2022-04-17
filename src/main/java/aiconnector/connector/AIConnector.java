@@ -9,16 +9,15 @@ import aiconnector.utils.tuple.Tuple;
 import lombok.Getter;
 
 import java.awt.*;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import java.util.*;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BiFunction;
+import java.util.function.BinaryOperator;
 import java.util.logging.Logger;
 
 import static aiconnector.connector.AIDirection.*;
@@ -965,16 +964,16 @@ public class AIConnector {
         if (barrier != null && full_growed != null)
         {
             if (vector == LEFT) {
-                barrier_grow = new AIRectangle(barrier.get_table_id(), barrier.x, full_growed.y, barrier.right, full_growed.bottom);
+                barrier_grow = new AIRectangle( barrier.x, full_growed.y, barrier.right, full_growed.bottom, barrier.get_table_id());
             }
             else if (vector == RIGHT) {
-                barrier_grow = new AIRectangle(barrier.get_table_id(), barrier.x, full_growed.y, barrier.right, full_growed.bottom);
+                barrier_grow = new AIRectangle(barrier.x, full_growed.y, barrier.right, full_growed.bottom, barrier.get_table_id());
             }
             else if (vector == UP) {
-                barrier_grow = new AIRectangle(barrier.get_table_id(), full_growed.x, barrier.y, full_growed.right, barrier.bottom);
+                barrier_grow = new AIRectangle(full_growed.x, barrier.y, full_growed.right, barrier.bottom, barrier.get_table_id());
             }
             else if (vector == DOWN) {
-                barrier_grow = new AIRectangle(barrier.get_table_id(), full_growed.x, barrier.y, full_growed.right, barrier.bottom);
+                barrier_grow = new AIRectangle(full_growed.x, barrier.y, full_growed.right, barrier.bottom, barrier.get_table_id());
             }
         }
 
@@ -994,28 +993,40 @@ public class AIConnector {
 
         ConcurrentHashMap<Integer, AIRectangle> mapI2Rect = aiManager.getMapTableId2Rect();
 //region 循环所有图元，检查障碍
-        for (var C : mapI2Rect.values())
-        {
-            if (C.equals(_srcRect) || C.equals(_dstRect))
-            {
-                continue;
-            }
-
-            if (C.y <= upPoint.y && upPoint.y <= C.bottom) {
-                if (left < C.right && C.x < upPoint.x) {
-                    // 如果左边存在障碍,是否更近
-                    if (null == barrier) {
-                        barrier = C;
+        Optional<AIRectangle> reduce = mapI2Rect.values()
+                .parallelStream()
+                .dropWhile(C -> C.equals(_srcRect) || C.equals(_dstRect))
+                .map(C -> {
+                    if (C.y <= upPoint.y && upPoint.y <= C.bottom) {
+                        if (left < C.right && C.x < upPoint.x) {
+                            return C;
+                        }
                     }
-                    else if ( C.right > barrier.right) {
-                        barrier = C;
-                    }
-                }
-            }
-        }
+                    return null;
+                }).filter(Objects::nonNull)
+                .reduce((rectangle, rectangle2) -> rectangle.right > rectangle2.right ? rectangle : rectangle2);
+//        for (var C : mapI2Rect.values())
+//        {
+//            if (C.equals(_srcRect) || C.equals(_dstRect))
+//            {
+//                continue;
+//            }
+//
+//            if (C.y <= upPoint.y && upPoint.y <= C.bottom) {
+//                if (left < C.right && C.x < upPoint.x) {
+//                    // 如果左边存在障碍,是否更近
+//                    if (null == barrier) {
+//                        barrier = C;
+//                    }
+//                    else if ( C.right > barrier.right) {
+//                        barrier = C;
+//                    }
+//                }
+//            }
+//        }
 //endregion
 
-        return barrier;
+        return reduce.orElse(null);
     }
 
     AIRectangle barrier_right(Point upPoint, AIRectangle parallelBarrier) {
@@ -1024,28 +1035,40 @@ public class AIConnector {
 
         ConcurrentHashMap<Integer, AIRectangle> mapI2Rect = aiManager.getMapTableId2Rect();
 //region 循环所有图元，检查障碍
-        for (var C : mapI2Rect.values())
-        {
-            if (C.equals(_srcRect) || C.equals(_dstRect))
-            {
-                continue;
-            }
-
-            if (C.y <= upPoint.y && upPoint.y <= C.bottom) {
-                if (upPoint.x< C.right && C.x< right) {
-                    // 如果左边存在障碍,是否更近
-                    if (null == barrier) {
-                        barrier = C;
+        Optional<AIRectangle> reduce = mapI2Rect.values()
+                .parallelStream()
+                .dropWhile(C -> C.equals(_srcRect) || C.equals(_dstRect))
+                .map(C -> {
+                    if (C.y <= upPoint.y && upPoint.y <= C.bottom) {
+                        if (upPoint.x< C.right && C.x< right) {
+                            return C;
+                        }
                     }
-                    else if (C.x < barrier.x) {
-                        barrier = C;
-                    }
-                }
-            }
-        }
+                    return null;
+                }).filter(Objects::nonNull)
+                .reduce((rectangle, rectangle2) -> rectangle.x < rectangle2.x ? rectangle : rectangle2);
+//        for (var C : mapI2Rect.values())
+//        {
+//            if (C.equals(_srcRect) || C.equals(_dstRect))
+//            {
+//                continue;
+//            }
+//
+//            if (C.y <= upPoint.y && upPoint.y <= C.bottom) {
+//                if (upPoint.x< C.right && C.x< right) {
+//                    // 如果左边存在障碍,是否更近
+//                    if (null == barrier) {
+//                        barrier = C;
+//                    }
+//                    else if (C.x < barrier.x) {
+//                        barrier = C;
+//                    }
+//                }
+//            }
+//        }
 //endregion
 
-        return barrier;
+        return reduce.orElse(null);
     }
 
     AIRectangle barrier_up(Point upPoint, AIRectangle parallelBarrier) {
@@ -1054,28 +1077,40 @@ public class AIConnector {
 
         ConcurrentHashMap<Integer, AIRectangle> mapI2Rect = aiManager.getMapTableId2Rect();
 //region 循环所有图元，检查障碍
-        for (var C : mapI2Rect.values())
-        {
-            if (C.equals(_srcRect) || C.equals(_dstRect))
-            {
-                continue;
-            }
-
-            if (C.x <= upPoint.x && upPoint.x <= C.right) {
-                if (up < C.bottom && C.y < upPoint.y) {
-                    // 如果上边存在障碍,是否更近
-                    if (null == barrier) {
-                        barrier = C;
+        Optional<AIRectangle> reduce = mapI2Rect.values()
+                .parallelStream()
+                .dropWhile(C -> C.equals(_srcRect) || C.equals(_dstRect))
+                .map(C -> {
+                    if (C.x <= upPoint.x && upPoint.x <= C.right) {
+                        if (up < C.bottom && C.y < upPoint.y) {
+                            return C;
+                        }
                     }
-                    else if (C.bottom > barrier.bottom) {
-                        barrier = C;
-                    }
-                }
-            }
-        }
+                    return null;
+                }).filter(Objects::nonNull)
+                .reduce((rectangle, rectangle2) -> rectangle.bottom > rectangle2.bottom ? rectangle : rectangle2);
+//        for (var C : mapI2Rect.values())
+//        {
+//            if (C.equals(_srcRect) || C.equals(_dstRect))
+//            {
+//                continue;
+//            }
+//
+//            if (C.x <= upPoint.x && upPoint.x <= C.right) {
+//                if (up < C.bottom && C.y < upPoint.y) {
+//                    // 如果上边存在障碍,是否更近
+//                    if (null == barrier) {
+//                        barrier = C;
+//                    }
+//                    else if (C.bottom > barrier.bottom) {
+//                        barrier = C;
+//                    }
+//                }
+//            }
+//        }
 //endregion
 
-        return barrier;
+        return reduce.orElse(null);
     }
 
     AIRectangle barrier_down(Point upPoint, AIRectangle parallelBarrier) {
@@ -1084,28 +1119,40 @@ public class AIConnector {
 
         ConcurrentHashMap<Integer, AIRectangle> mapI2Rect = aiManager.getMapTableId2Rect();
 //region 循环所有图元，检查障碍
-        for (var C : mapI2Rect.values())
-        {
-            if (C.equals(_srcRect) || C.equals(_dstRect))
-            {
-                continue;
-            }
-
-            if (C.x <= upPoint.x && upPoint.x <= C.right) {
-                if (down > C.bottom && C.y > upPoint.y) {
-                    // 如果左边存在障碍,是否更近
-                    if (null == barrier) {
-                        barrier = C;
+        Optional<AIRectangle> reduce = mapI2Rect.values()
+                .parallelStream()
+                .dropWhile(C -> C.equals(_srcRect) || C.equals(_dstRect))
+                .map(C -> {
+                    if (C.x <= upPoint.x && upPoint.x <= C.right) {
+                        if (down > C.bottom && C.y > upPoint.y) {
+                            return C;
+                        }
                     }
-                    else if (C.y < barrier.y) {
-                        barrier = C;
-                    }
-                }
-            }
-        }
+                    return null;
+                }).filter(Objects::nonNull)
+                .reduce((rectangle, rectangle2) -> rectangle.y < rectangle2.y ? rectangle : rectangle2);
+//        for (var C : mapI2Rect.values())
+//        {
+//            if (C.equals(_srcRect) || C.equals(_dstRect))
+//            {
+//                continue;
+//            }
+//
+//            if (C.x <= upPoint.x && upPoint.x <= C.right) {
+//                if (down > C.bottom && C.y > upPoint.y) {
+//                    // 如果左边存在障碍,是否更近
+//                    if (null == barrier) {
+//                        barrier = C;
+//                    }
+//                    else if (C.y < barrier.y) {
+//                        barrier = C;
+//                    }
+//                }
+//            }
+//        }
 //endregion
 
-        return barrier;
+        return reduce.orElse(null);
     }
 
     AIRectangle trap_find(AIRectangle spBarrier, AIDirection direction, Point spPoint, TrapData trap_data
