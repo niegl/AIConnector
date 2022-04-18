@@ -95,16 +95,13 @@ public final class AIConnector {
             return get_route();
         }
 
-        Tuple<Point, Point> guid = init_start_point(direction, _srcRect, _dstRect);
-        _startPoint.set(guid.a);
         // 终点可以简单初始化为中心点（最后一步会进行修正）
         _endPoint.set(new Point((int) _dstRect.getCenterX(), (int) _dstRect.getCenterY()));
 
         logger.info("------------------------------------>>>[搜索开始]<<<-------------------------------------");
-        ArrayList<Point> route = new ArrayList<>();
-        route.add(_startPoint.get());
-        processPoints(route, _startPoint.get(), direction,new Tuple<>(null,null),new Tuple<>(null,null));
+        List<Point> route = processTwoDirection(direction);
 
+        _startPoint.set(route.get(0));
         _srcRect.insert_or_update_anchor_point(_startPoint.get(), get_connector_id());
         _dstRect.insert_or_update_anchor_point(_endPoint.get(), get_connector_id());
 
@@ -112,6 +109,108 @@ public final class AIConnector {
         _route.clear();
         _route.addAll(route);
         return _route;
+    }
+
+    /**
+     * 处理左上、左下、右上、右下两个方向的路径搜索，提供两路查找并采用最优路径。
+     * @param direction 初始方向
+     * @return 最优路径
+     */
+    private List<Point> processTwoDirection( AIDirection direction) {
+        ArrayList<Point> route = new ArrayList<>();
+        if (direction == UP
+                || direction == DOWN
+                || direction == LEFT
+                || direction == RIGHT) {
+            Tuple<Point, Point> guid = init_start_point(direction, _srcRect, _dstRect);
+            route.add(guid.a);
+            processPoints(route, guid.a, direction,new Tuple<>(null,null),new Tuple<>(null,null));
+
+            return route;
+        }
+
+        List<Point> route1 = new ArrayList<>();
+        List<Point> route2 = new ArrayList<>();
+        CountDownLatch countDownLatch = new CountDownLatch(2);
+        ExecutorService threadPool = Executors.newFixedThreadPool(2);
+        if (direction == LEFT_UP) {
+            threadPool.submit(() -> {
+                Tuple<Point, Point> guid = init_start_point(LEFT, _srcRect, _dstRect);
+                route1.add(guid.a);
+                processLeft(route1, guid.a, new Tuple<>(null,null),new Tuple<>(null,null));
+                countDownLatch.countDown();
+            });
+            threadPool.submit(() -> {
+                Tuple<Point, Point> guid = init_start_point(UP, _srcRect, _dstRect);
+                route2.add(guid.a);
+                processUp(route2, guid.a, new Tuple<>(null,null),new Tuple<>(null,null));
+                countDownLatch.countDown();
+            });
+        } else if (direction == LEFT_DOWN) {
+            threadPool.submit(() -> {
+                Tuple<Point, Point> guid = init_start_point(LEFT, _srcRect, _dstRect);
+                route1.add(guid.a);
+                processLeft(route1, guid.a, new Tuple<>(null,null),new Tuple<>(null,null));
+                countDownLatch.countDown();
+            });
+            threadPool.submit(() -> {
+                Tuple<Point, Point> guid = init_start_point(DOWN, _srcRect, _dstRect);
+                route2.add(guid.a);
+                processDown(route2, guid.a, new Tuple<>(null,null),new Tuple<>(null,null));
+                countDownLatch.countDown();
+            });
+        } else if (direction == RIGHT_UP) {
+            threadPool.submit(() -> {
+                Tuple<Point, Point> guid = init_start_point(RIGHT, _srcRect, _dstRect);
+                route1.add(guid.a);
+                processRight(route1, guid.a, new Tuple<>(null,null),new Tuple<>(null,null));
+                countDownLatch.countDown();
+            });
+            threadPool.submit(() -> {
+                Tuple<Point, Point> guid = init_start_point(UP, _srcRect, _dstRect);
+                route2.add(guid.a);
+                processUp(route2, guid.a, new Tuple<>(null,null),new Tuple<>(null,null));
+                countDownLatch.countDown();
+            });
+        } else if (direction == RIGHT_DOWN) {
+            threadPool.submit(() -> {
+                Tuple<Point, Point> guid = init_start_point(RIGHT, _srcRect, _dstRect);
+                route1.add(guid.a);
+                processRight(route1, guid.a, new Tuple<>(null,null),new Tuple<>(null,null));
+                countDownLatch.countDown();
+            });
+            threadPool.submit(() -> {
+                Tuple<Point, Point> guid = init_start_point(DOWN, _srcRect, _dstRect);
+                route2.add(guid.a);
+                processDown(route2, guid.a, new Tuple<>(null,null),new Tuple<>(null,null));
+                countDownLatch.countDown();
+            });
+        } else {
+            countDownLatch.countDown();
+            countDownLatch.countDown();
+        }
+        // 处理结果：采用最短路径(路径相同采用折线最少)
+        try {
+            countDownLatch.await();
+            threadPool.shutdown();
+            long routeLength1 = route_length(route1);
+            long routeLength2 = route_length(route2);
+            if (routeLength1 < routeLength2) {
+                return route1;
+            } else if(routeLength2 < routeLength1) {
+                return route2;
+            } else {
+                if (route1.size() < route2.size()) {
+                    return route1;
+                } else {
+                    return route2;
+                }
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        return route;
     }
 
     /**
@@ -1212,10 +1311,10 @@ public final class AIConnector {
     }
 
     /**
-     * 初始化开始、终止点坐标.
+     * 初始化开始点坐标.
      * @param lpSrcRect
      * @param lpDstRect
-     * @return <方向，开始点坐标，终止点坐标>
+     * @return <开始点坐标，终止点坐标>
      */
     private Tuple<Point,Point> init_start_point(AIDirection direction, AIRectangle lpSrcRect, AIRectangle lpDstRect) {
         int up = max(lpSrcRect.y, lpDstRect.y);
@@ -1252,22 +1351,22 @@ public final class AIConnector {
             }
         }
         else
-        {
-            if (LEFT_UP == direction)
+        {   // 随便取点
+            if (LEFT == direction)
             {
                 guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.x, lpSrcRect.y+lpSrcRect.height/2), LEFT, false);
             }
-            else if(LEFT_DOWN == direction)
-            {
-                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.x, lpSrcRect.y+lpSrcRect.height/2), LEFT, true);
-            }
-            else if (RIGHT_UP == direction)
+            else if(RIGHT == direction)
             {
                 guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.right(), lpSrcRect.y+lpSrcRect.height/2), RIGHT, true);
             }
-            else if (RIGHT_DOWN == direction)
+            else if (UP == direction)
             {
-                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.right(), lpSrcRect.y+lpSrcRect.height/2), RIGHT, false);
+                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.x + lpSrcRect.width/2, lpSrcRect.y), UP, true);
+            }
+            else if (DOWN == direction)
+            {
+                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.x + lpSrcRect.width/2, lpSrcRect.bottom()), DOWN, false);
             }
         }
 
@@ -1280,6 +1379,75 @@ public final class AIConnector {
         assert guide != null;
         return Tuple.of(guide.a,new Point());
     }
+//    /**
+//     * 初始化开始、终止点坐标.
+//     * @param lpSrcRect
+//     * @param lpDstRect
+//     * @return <方向，开始点坐标，终止点坐标>
+//     */
+//    private Tuple<Point,Point> init_start_point(AIDirection direction, AIRectangle lpSrcRect, AIRectangle lpDstRect) {
+//        int up = max(lpSrcRect.y, lpDstRect.y);
+//        int down = min(lpSrcRect.bottom(), lpDstRect.bottom());
+//        int left = max(lpSrcRect.x, lpDstRect.x);
+//        int right = min(lpSrcRect.right(), lpDstRect.right());
+//
+//        boolean horizontal = down >= up;	// 水平方向是否相交
+//        boolean vertical = right >= left;	// 垂直方向是否相交
+//
+//        int connectorId = get_connector_id();
+//        Tuple<Point, AIDirection> guide = null;
+//
+//        if (horizontal)
+//        {
+//            if (LEFT == direction)
+//            {
+//                guide = lpSrcRect.get_free_anchor(connectorId, new Point(lpSrcRect.x, up), LEFT, true);
+//            }
+//            else if (RIGHT == direction)
+//            {
+//                guide = lpSrcRect.get_free_anchor(connectorId, new Point(lpSrcRect.right(), up), RIGHT,false);
+//            }
+//        }
+//        else if (vertical)
+//        {
+//            if (UP == direction)
+//            {
+//                guide = lpSrcRect.get_free_anchor( connectorId, new Point(left, lpSrcRect.y), UP, false);
+//            }
+//            else if (DOWN == direction)
+//            {
+//                guide = lpSrcRect.get_free_anchor( connectorId, new Point(left, lpSrcRect.bottom()), DOWN, true);
+//            }
+//        }
+//        else
+//        {
+//            if (LEFT_UP == direction)
+//            {
+//                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.x, lpSrcRect.y+lpSrcRect.height/2), LEFT, false);
+//            }
+//            else if(LEFT_DOWN == direction)
+//            {
+//                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.x, lpSrcRect.y+lpSrcRect.height/2), LEFT, true);
+//            }
+//            else if (RIGHT_UP == direction)
+//            {
+//                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.right(), lpSrcRect.y+lpSrcRect.height/2), RIGHT, true);
+//            }
+//            else if (RIGHT_DOWN == direction)
+//            {
+//                guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.right(), lpSrcRect.y+lpSrcRect.height/2), RIGHT, false);
+//            }
+//        }
+//
+//        // solve the overlap problem
+//        if (direction == OVERLAP)
+//        {
+//            guide = lpSrcRect.get_free_anchor( connectorId, new Point(lpSrcRect.right(), lpSrcRect.y+lpSrcRect.height/2), RIGHT, false);
+//        }
+//
+//        assert guide != null;
+//        return Tuple.of(guide.a,new Point());
+//    }
 
     private static long route_length(List<Point> route)
     {
