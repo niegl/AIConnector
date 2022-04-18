@@ -43,14 +43,14 @@ public class AIRectangle extends Rectangle {
         this._table_id = _table_id;
     }
 
-    public int right = this.x + this.width;
-    public int bottom = this.y + this.height;
+    public int right() { return this.x + this.width;}
+    public int bottom() { return this.y + this.height;}
 
     /**
      * connectorID->锚点集合
      */
     @Getter
-    private ConcurrentHashMap<Integer, Point> _anchorLine2Point = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, Point> _anchorLine2Point = new ConcurrentHashMap<>();
 
     /**
      * Params:
@@ -105,9 +105,9 @@ public class AIRectangle extends Rectangle {
                 }
                 else {
                     startPoint.y += AIConstants.POINT_SPACE;
-                    if (startPoint.y > this.bottom - AIConstants.POINT2EDGE_GAP) {
+                    if (startPoint.y > this.bottom() - AIConstants.POINT2EDGE_GAP) {
                         next_direction = DOWN;
-                        startPoint.setLocation( this.x + AIConstants.POINT2EDGE_GAP, this.bottom);
+                        startPoint.setLocation( this.x + AIConstants.POINT2EDGE_GAP, this.bottom());
                     }
                 }
                 break;
@@ -115,9 +115,9 @@ public class AIRectangle extends Rectangle {
                 if (!bInvertPeek)
                 {
                     startPoint.x += AIConstants.POINT_SPACE;
-                    if (startPoint.x > this.right - AIConstants.POINT2EDGE_GAP) {
+                    if (startPoint.x > this.right() - AIConstants.POINT2EDGE_GAP) {
                         next_direction = RIGHT;
-                        startPoint.setLocation( this.right, this.getY() + AIConstants.POINT2EDGE_GAP);
+                        startPoint.setLocation( this.right(), this.getY() + AIConstants.POINT2EDGE_GAP);
                     }
                 }
                 else {
@@ -132,16 +132,16 @@ public class AIRectangle extends Rectangle {
                 if (!bInvertPeek)
                 {
                     startPoint.y += AIConstants.POINT_SPACE;
-                    if (startPoint.y > this.bottom - AIConstants.POINT2EDGE_GAP) {
+                    if (startPoint.y > this.bottom() - AIConstants.POINT2EDGE_GAP) {
                         next_direction = DOWN;
-                        startPoint.setLocation( this.right - AIConstants.POINT2EDGE_GAP, this.bottom);
+                        startPoint.setLocation( this.right() - AIConstants.POINT2EDGE_GAP, this.bottom());
                     }
                 }
                 else {
                     startPoint.y -= AIConstants.POINT_SPACE;
                     if (startPoint.y < this.y + AIConstants.POINT2EDGE_GAP) {
                         next_direction = UP;
-                        startPoint.setLocation( this.right - AIConstants.POINT2EDGE_GAP, this.y);
+                        startPoint.setLocation( this.right() - AIConstants.POINT2EDGE_GAP, this.y);
                     }
                 }
                 break;
@@ -151,14 +151,14 @@ public class AIRectangle extends Rectangle {
                     startPoint.x -= AIConstants.POINT_SPACE;
                     if (startPoint.x < this.x + AIConstants.POINT2EDGE_GAP) {
                         next_direction = LEFT;
-                        startPoint.setLocation( this.x, this.bottom - AIConstants.POINT2EDGE_GAP);
+                        startPoint.setLocation( this.x, this.bottom() - AIConstants.POINT2EDGE_GAP);
                     }
                 }
                 else {
                     startPoint.x += AIConstants.POINT_SPACE;
-                    if (startPoint.x > this.right - AIConstants.POINT2EDGE_GAP) {
+                    if (startPoint.x > this.right() - AIConstants.POINT2EDGE_GAP) {
                         next_direction = RIGHT;
-                        startPoint.setLocation(this.right, this.bottom - AIConstants.POINT2EDGE_GAP);
+                        startPoint.setLocation(this.right(), this.bottom() - AIConstants.POINT2EDGE_GAP);
                     }
                 }
                 break;

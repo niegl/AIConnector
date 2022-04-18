@@ -6,26 +6,23 @@ import static aiconnector.connector.TRAP_TYPE.*;
  * 利用状态机原理，判定陷阱类型
  */
 public class TrapData {
-    TRAP_TYPE _trap_type;
+    TRAP_TYPE _trap_type = TRAP_NONE;
     /**
      * left:上/下的左边；up:左/右的上边
      */
-    int _UpOrLeft;
+    int _UpOrLeft = 0;
     /**
      * right:上/下的右边；down:左/右下边
      */
-    int _DownOrRight;
+    int _DownOrRight = 0;
     /**
      * 障碍的最近边，也就是前进距离
      */
     int _forward;
 
-    public TrapData(int _forward) {
-        this._trap_type = TRAP_NONE;
+    public void init(int _forward) {
         this._UpOrLeft = this._DownOrRight = this._forward = _forward;
     }
-
-    public TrapData clone(int forward) { return new TrapData(forward); }
 
     /**
      * 为了产生一个障碍检测步骤缩小走形最大距离

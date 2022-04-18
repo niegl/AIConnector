@@ -185,9 +185,15 @@ public class AIManager implements AIManagerItf {
             // 如果图元重叠,则加入
             boolean boverlap =  spExist.intersects(newRectangle);
             if (boverlap) {
+                // 更新新图元的覆盖关系
                 CopyOnWriteArraySet<AIRectangle> overlaps = mapTableId2Overlaps.getOrDefault(table_id, new CopyOnWriteArraySet<>());
                 overlaps.add(spExist);
                 mapTableId2Overlaps.put(table_id,overlaps);
+
+                // 更新与新图元覆盖的 图元 的覆盖关系
+                CopyOnWriteArraySet<AIRectangle> alreadyExist = mapTableId2Overlaps.getOrDefault(spExist.get_table_id(), new CopyOnWriteArraySet<>());
+                alreadyExist.add(newRectangle);
+                mapTableId2Overlaps.put(spExist.get_table_id(), alreadyExist);
             }
         });
 

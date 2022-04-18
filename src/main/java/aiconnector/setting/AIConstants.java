@@ -6,6 +6,7 @@ import java.util.List;
 import static aiconnector.connector.AIDirection.*;
 
 public interface AIConstants {
+    int MAX_STEP = 13;
     /**
      * 是否开启日志记录查找过程(debug使用)
      */
