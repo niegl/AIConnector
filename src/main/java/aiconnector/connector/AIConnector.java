@@ -333,15 +333,15 @@ public final class AIConnector {
         if (null == barrier)
         {
             // 没有平行障碍
-            if (null == parallelBarrier)
-            {
+//            if (null == parallelBarrier)
+//            {
                 if (startPoint.x >= targetRect.x && startPoint.x <= targetRect.right())
                 {
 //                    _endPoint.set(new Point(startPoint.x,targetRect.bottom));
                     route.add(new Point(startPoint.x,targetRect.bottom()));
                     return;
                 }
-            }
+//            }
             // 没有障碍的情况下，能够向上走得最远距离（因为反向行走的情况，需要考虑平行障碍来纠正方向）
             newStartPoint.y = min(_endPoint.get().y, parallelBarrier != null ? parallelBarrier.y - BARRIER_SPACE : Integer.MAX_VALUE);
             if (prevParallelBarrier != null)	//	需要绕过反向障碍，无论是否存在陷阱(修复异常情况4)
@@ -446,15 +446,14 @@ public final class AIConnector {
         if (null == barrier)
         {
             // 没有平行障碍
-            if (null == parallelBarrier)
-            {
+//            if (null == parallelBarrier)
+//            {
                 if (startPoint.x >= targetRect.x && startPoint.x <= targetRect.right())
                 {
-//                    _endPoint.set(new Point(startPoint.x,targetRect.y));
                     route.add(new Point(startPoint.x,targetRect.y));
                     return;
                 }
-            }
+//            }
             // 没有障碍的情况下，能够向下走得最远距离（因为反向行走的情况，需要考虑平行障碍来纠正方向）
             newStartPoint.y = max(_endPoint.get().y, parallelBarrier != null ? parallelBarrier.bottom() + BARRIER_SPACE : Integer.MIN_VALUE);
             if (prevParallelBarrier != null)	//	需要绕过反向障碍，无论是否存在陷阱(修复异常情况4)
@@ -559,8 +558,8 @@ public final class AIConnector {
         if ( null == barrier)
         {
             // 没有平行障碍
-            if (null == parallelBarrier)
-            {
+//            if (null == parallelBarrier)
+//            {
                 AIRectangle dst = _dstRect;
                 if (startPoint.y >= dst.y && startPoint.y <= dst.bottom())
                 {
@@ -568,7 +567,7 @@ public final class AIConnector {
                     route.add(new Point(dst.right(),startPoint.y));
                     return;
                 }
-            }
+//            }
             // 没有障碍的情况下，能够向左走得最远距离（因为反向行走的情况，需要考虑平行障碍来纠正方向）
             newStartPoint.x = min(_endPoint.get().x,
                     parallelBarrier!=null ? parallelBarrier.x - BARRIER_SPACE : Integer.MAX_VALUE);
@@ -674,15 +673,15 @@ public final class AIConnector {
         if (null == barrier)
         {
             // 没有平行障碍
-            if (null == parallelBarrier)
-            {
+//            if (null == parallelBarrier)
+//            {
                 if (startPoint.y >= targetRect.y && startPoint.y <= targetRect.bottom())
                 {
 //                    _endPoint.set(new Point(targetRect.x,startPoint.y));
                     route.add(new Point(targetRect.x,startPoint.y));
                     return;
                 }
-            }
+//            }
             // 没有障碍的情况下，能够向右走得最远距离（因为反向行走的情况，需要考虑平行障碍来纠正方向）
             newStartPoint.x = max(_endPoint.get().x, parallelBarrier != null ? parallelBarrier.right() + BARRIER_SPACE : Integer.MIN_VALUE);
             if (prevParallelBarrier != null)	//	需要绕过反向障碍，无论是否存在陷阱(修复异常情况4)
@@ -1089,7 +1088,7 @@ public final class AIConnector {
                 .dropWhile(C -> C.equals(_srcRect) || C.equals(_dstRect))
                 .map(C -> {
                     if (C.y <= upPoint.y && upPoint.y <= C.bottom()) {
-                        if (left < C.right() && C.x < upPoint.x) {
+                        if (left <= C.right() && C.right() < upPoint.x) {
                             return C;
                         }
                     }
@@ -1117,7 +1116,7 @@ public final class AIConnector {
                 .dropWhile(C -> C.equals(_srcRect) || C.equals(_dstRect))
                 .map(C -> {
                     if (C.y <= upPoint.y && upPoint.y <= C.bottom()) {
-                        if (upPoint.x< C.right() && C.x< right) {
+                        if (upPoint.x< C.x && C.x< right) {
                             return C;
                         }
                     }
@@ -1138,7 +1137,7 @@ public final class AIConnector {
                 .dropWhile(C -> C.equals(_srcRect) || C.equals(_dstRect))
                 .map(C -> {
                     if (C.x <= upPoint.x && upPoint.x <= C.right()) {
-                        if (up < C.bottom() && C.y < upPoint.y) {
+                        if (up <= C.bottom() && C.bottom() < upPoint.y) {
                             return C;
                         }
                     }
@@ -1160,7 +1159,8 @@ public final class AIConnector {
                 .dropWhile(C -> C.equals(_srcRect) || C.equals(_dstRect))
                 .map(C -> {
                     if (C.x <= upPoint.x && upPoint.x <= C.right()) {
-                        if (down > C.bottom() && C.y > upPoint.y) {
+//                        if (down > C.bottom() && C.y > upPoint.y) {
+                        if (down >= C.y && C.y > upPoint.y) {
                             return C;
                         }
                     }
