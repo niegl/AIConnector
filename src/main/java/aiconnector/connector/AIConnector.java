@@ -24,6 +24,7 @@ import static aiconnector.connector.AIDirection.*;
 import static aiconnector.setting.AIConstants.BARRIER_SPACE;
 import static java.lang.Math.*;
 import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.WARNING;
 
 
 public final class AIConnector {
@@ -33,7 +34,7 @@ public final class AIConnector {
      */
     private static final Logger logger = Logger.getLogger(AIConnector.class.getName());
     static {
-        logger.setLevel(INFO);
+        logger.setLevel(WARNING);
     }
 
     private static final AIManager aiManager = AIManager.getInstance();
@@ -121,7 +122,8 @@ public final class AIConnector {
         if (direction == UP
                 || direction == DOWN
                 || direction == LEFT
-                || direction == RIGHT) {
+                || direction == RIGHT
+                || direction == OVERLAP) {
             Tuple<Point, Point> guid = init_start_point(direction, _srcRect, _dstRect);
             route.add(guid.a);
             processPoints(route, guid.a, direction,new Tuple<>(null,null),new Tuple<>(null,null));

@@ -3,6 +3,8 @@ package aiconnector.collide;
 import aiconnector.setting.AIConstants;
 import aiconnector.utils.tuple.Tuple;
 
+import java.util.Objects;
+
 import static java.lang.Math.abs;
 import static java.lang.Math.sqrt;
 
@@ -16,12 +18,8 @@ public class Utils {
         long x1 = l1.at(0), y1 = l1.at(1), x2 = l1.at(2), y2 = l1.at(3);
         long a1 = -(y2 - y1), b1 = x2 - x1, c1 = (y2 - y1) * x1 - (x2 - x1) *y1;
         long x3 = l2.at(0), y3 = l2.at(1), x4 = l2.at(2), y4 = l2.at(3);
-        if ((x3 != x4 || y3 != y4) &&
-                a1 * x3 + b1 * y3 + c1 == 0 && a1 * x4 + b1 * y4 + c1 == 0)
-        {
-            return true;
-        }
-        return false;
+        return (x3 != x4 || y3 != y4) &&
+                a1 * x3 + b1 * y3 + c1 == 0 && a1 * x4 + b1 * y4 + c1 == 0;
     }
     /**
      * 功能：通过距离检查是否存在冲突.<p>
@@ -37,10 +35,7 @@ public class Utils {
              *******************************************************************************************************************/
             Tuple<Double,Double> p1 = vector_direction(l1);
             Tuple<Double,Double> p2 =vector_direction(l2);
-            if (p1.a != p2.a || p1.b != p2.b) {
-                return false;
-            }
-            return true;
+            return Objects.equals(p1.a, p2.a) && Objects.equals(p1.b, p2.b);
         }
 
         return false;
