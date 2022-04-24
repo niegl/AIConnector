@@ -1,20 +1,18 @@
 package aiconnector.connector;
 
 import aiconnector.setting.AIConstants;
-import aiconnector.utils.tuple.Tuple;
+import aiconnector.utils.Tuple;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.awt.*;
 import java.util.Collection;
 import java.util.Objects;
-import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 import static aiconnector.connector.AIDirection.*;
 import static aiconnector.connector.AIDirection.RIGHT;
-import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 
 public class AIRectangle extends Rectangle {

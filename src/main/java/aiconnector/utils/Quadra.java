@@ -1,4 +1,4 @@
-package aiconnector.utils.tuple;
+package aiconnector.utils;
 
 public class Quadra<A,B,C,D> extends Triple<A,B,C> {
     public final D d;

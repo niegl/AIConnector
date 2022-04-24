@@ -1,7 +1,6 @@
-package aiconnector.utils.tuple;
+package aiconnector.utils;
 
 import lombok.EqualsAndHashCode;
-import lombok.Synchronized;
 
 @EqualsAndHashCode
 public class Tuple<A,B> {

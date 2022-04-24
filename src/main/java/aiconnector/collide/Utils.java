@@ -1,7 +1,7 @@
 package aiconnector.collide;
 
 import aiconnector.setting.AIConstants;
-import aiconnector.utils.tuple.Tuple;
+import aiconnector.utils.Tuple;
 
 import java.util.Objects;
 

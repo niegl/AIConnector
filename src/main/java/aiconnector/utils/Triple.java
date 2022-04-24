@@ -1,4 +1,4 @@
-package aiconnector.utils.tuple;
+package aiconnector.utils;
 
 public class Triple<A,B,C> extends Tuple<A,B> {
     public final C c;

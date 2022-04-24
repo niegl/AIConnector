@@ -5,5 +5,5 @@ package aiconnector.collide;
  * 1、障碍检测；<p>
  * 2、方向判定<p></p>
  */
-public class CollideDetect {
+class CollideDetect {
 }

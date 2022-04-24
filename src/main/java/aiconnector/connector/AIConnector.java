@@ -2,11 +2,12 @@ package aiconnector.connector;
 
 import aiconnector.collide.Utils;
 import aiconnector.collide.Vec4d;
-import aiconnector.manager.AIManager;
+import aiconnector.manager.AIManagerItf;
 import aiconnector.setting.AIConstants;
-import aiconnector.utils.tuple.Triple;
-import aiconnector.utils.tuple.Tuple;
+import aiconnector.utils.Triple;
+import aiconnector.utils.Tuple;
 import lombok.Getter;
+import lombok.Setter;
 
 import java.awt.*;
 import java.util.List;
@@ -18,12 +19,10 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BiFunction;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 import static aiconnector.connector.AIDirection.*;
 import static aiconnector.setting.AIConstants.BARRIER_SPACE;
 import static java.lang.Math.*;
-import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 
 
@@ -37,7 +36,8 @@ public final class AIConnector {
         logger.setLevel(WARNING);
     }
 
-    private static final AIManager aiManager = AIManager.getInstance();
+    @Setter
+    private AIManagerItf aiManager;
     /**
      * 唯一代表这条连线的id
      */
@@ -67,20 +67,22 @@ public final class AIConnector {
     /**
      * 自动生成connectorID的构造函数
      */
-    public AIConnector(AIRectangle _srcRect, AIRectangle _dstRect) {
+    public AIConnector(AIRectangle _srcRect, AIRectangle _dstRect, AIManagerItf managerItf) {
         _connector_id = _connector_atomic.incrementAndGet();
         this._srcRect = _srcRect;
         this._dstRect = _dstRect;
+        aiManager = managerItf;
     }
 
     /**
      * 指定connectorID的构造函数
      * @param _connector_id
      */
-    public AIConnector(AIRectangle _srcRect, AIRectangle _dstRect, int _connector_id) {
+    public AIConnector(AIRectangle _srcRect, AIRectangle _dstRect, int _connector_id, AIManagerItf managerItf) {
         this._connector_id = _connector_id;
         this._srcRect = _srcRect;
         this._dstRect = _dstRect;
+        aiManager = managerItf;
     }
     /**
      * 主入口，搜索路径
@@ -1220,7 +1222,7 @@ public final class AIConnector {
         return spBarrier_inflate;
     }
 
-    static void tranverse_overlap(LinkedHashSet<AIRectangle> spQueue, int position, AIRectangle spBarrier_inflate,
+    void tranverse_overlap(LinkedHashSet<AIRectangle> spQueue, int position, AIRectangle spBarrier_inflate,
                            BiFunction<AIRectangle, AIRectangle, Long> fnTrap)
     {
         // 如果队列为空，则结束返回

@@ -5,7 +5,7 @@ import static aiconnector.connector.TRAP_TYPE.*;
 /**
  * 利用状态机原理，判定陷阱类型
  */
-public class TrapData {
+class TrapData {
     TRAP_TYPE _trap_type = TRAP_NONE;
     /**
      * left:上/下的左边；up:左/右的上边

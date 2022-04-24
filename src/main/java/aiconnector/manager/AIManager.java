@@ -2,7 +2,8 @@ package aiconnector.manager;
 
 import aiconnector.connector.AIConnector;
 import aiconnector.connector.AIRectangle;
-import aiconnector.utils.tuple.Tuple;
+import aiconnector.setting.AIConstants;
+import aiconnector.utils.Tuple;
 import lombok.Getter;
 import lombok.NonNull;
 
@@ -14,21 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CopyOnWriteArraySet;
 
-public class AIManager implements AIManagerItf {
-    private AIManager() {}
-
-    /**
-     * 静态内部类,包含一个静态属性：Singleton
-     */
-    private static class SingletonInstance {
-        private static final AIManager INSTANCE = new AIManager();
-    }
-    /**
-     * 对外公有的静态方法，直接返回SingletonInstance.INSTANCE
-     */
-    public static synchronized AIManager getInstance() {
-        return SingletonInstance.INSTANCE;
-    }
+class AIManager implements AIManagerItf {
     /**
      * 图元操作类型枚举类
      */
@@ -66,6 +53,7 @@ public class AIManager implements AIManagerItf {
      * 	std::vector<AIConnector>: 两个图元之间的连线，不同的连线用AIConnector：：m_uIdentify来区分
      * @return
      */
+    @Override
     public CopyOnWriteArraySet<AIRectangle> getOverlap(Integer table_id) {
         return mapTableId2Overlaps.get(table_id);
     }
@@ -80,7 +68,7 @@ public class AIManager implements AIManagerItf {
         int table_id = rectangle.get_table_id();
         if (mapTableId2Rect.putIfAbsent(table_id,rectangle) == null) {
             // 建立图元关联
-            return attach_overlap(table_id);
+            return build_overlap(table_id);
         }
 
         return false;
@@ -101,7 +89,7 @@ public class AIManager implements AIManagerItf {
                 integers.parallelStream().forEach(this::delete_line);
             }
             // 解除关系
-            detach_overlap(table_id);
+            delete_overlap(table_id);
             // 先删除连线在删除图元
             mapTableId2Rect.remove(table_id);
         }
@@ -172,7 +160,7 @@ public class AIManager implements AIManagerItf {
      * @param table_id
      * @return TRUE: 刷新成功
      */
-    boolean attach_overlap(int table_id)    // 建立关系
+    private boolean build_overlap(int table_id)    // 建立关系
     {
         var spTempRect = find_rect(table_id);
         if (spTempRect.isEmpty()) return false;
@@ -183,12 +171,12 @@ public class AIManager implements AIManagerItf {
             // 跳过自身
             if (spExist.equals(newRectangle)) return;
             // 如果图元重叠,则加入
-            boolean boverlap =  spExist.intersects(newRectangle);
+            boolean boverlap =  spExist.intersects(new Rectangle(newRectangle.x - AIConstants.OVERLAP_SPACE, newRectangle.y - AIConstants.OVERLAP_SPACE, newRectangle.width+AIConstants.OVERLAP_SPACE, newRectangle.height+AIConstants.OVERLAP_SPACE));
             if (boverlap) {
                 // 更新新图元的覆盖关系
                 CopyOnWriteArraySet<AIRectangle> overlaps = mapTableId2Overlaps.getOrDefault(table_id, new CopyOnWriteArraySet<>());
                 overlaps.add(spExist);
-                mapTableId2Overlaps.put(table_id,overlaps);
+                mapTableId2Overlaps.put(table_id, overlaps);
 
                 // 更新与新图元覆盖的 图元 的覆盖关系
                 CopyOnWriteArraySet<AIRectangle> alreadyExist = mapTableId2Overlaps.getOrDefault(spExist.get_table_id(), new CopyOnWriteArraySet<>());
@@ -206,7 +194,7 @@ public class AIManager implements AIManagerItf {
      * @param table_id
      * @return
      */
-    boolean detach_overlap(Integer table_id)
+    boolean delete_overlap(Integer table_id)
     {
         Optional<AIRectangle> spTempRect = find_rect(table_id);
         if (spTempRect.isEmpty()) return false;
@@ -241,6 +229,7 @@ public class AIManager implements AIManagerItf {
      * @param lineId 待删除连线id
      * @return
      */
+    @Override
     public boolean delete_line(Integer lineId) {
         AIConnector remove = mapLineId2Connector.remove(lineId);
         // 连线不存在
@@ -344,8 +333,9 @@ public class AIManager implements AIManagerItf {
         return true;
     }
 
+    @Override
     public boolean add_line(@NonNull AIRectangle srcRect, @NonNull AIRectangle dstRect, @NonNull Integer lineId) {
-        return add_line(new AIConnector(srcRect, dstRect, lineId));
+        return add_line(new AIConnector(srcRect, dstRect, lineId, this));
     }
 
     /**
@@ -392,7 +382,8 @@ public class AIManager implements AIManagerItf {
  		add_rect(new AIRectangle(lpRect, table_id));
     }
 
-    boolean attach_anchor(AIRectangle spSrcRect, Point point, int connectorID) {
+    @Override
+    public boolean attach_anchor(AIRectangle spSrcRect, Point point, int connectorID) {
         spSrcRect.insert_or_update_anchor_point(point, connectorID);
         return true;
     }

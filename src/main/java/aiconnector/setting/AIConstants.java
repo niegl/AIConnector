@@ -25,6 +25,10 @@ public interface AIConstants {
       */
     int MAX_RETRY_TIMES = 6;
     /**
+     * 在两个图元相邻很近的情况下判定为重叠。这个距离默认为3
+     * */
+    int OVERLAP_SPACE = BARRIER_SPACE;
+    /**
      * 设置是否在完成路径搜索后对路径进行优化(线路合并)
      */
     boolean optimize = false;
