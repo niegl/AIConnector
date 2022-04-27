@@ -324,6 +324,10 @@ class AIManager implements AIManagerItf {
             mapTableId2LineIDs.put(srcTableID, orDefault);
         }
         orDefault.add(connectorId);
+        // 如果源表和目标表是一个，那么添加一个即可。
+        if (srcTableID == dstTableID) {
+            return true;
+        }
         CopyOnWriteArrayList<Integer> orDefault2 = mapTableId2LineIDs.getOrDefault(dstTableID, new CopyOnWriteArrayList<>());
         if (orDefault2.isEmpty()) {
             mapTableId2LineIDs.put(dstTableID, orDefault2);

@@ -93,6 +93,10 @@ public final class AIConnector {
         Objects.requireNonNull(_srcRect);
         Objects.requireNonNull(_dstRect);
 
+        if (_srcRect.get_table_id() == _dstRect.get_table_id()) {
+            return get_route();
+        }
+
         AIDirection direction = init_direction(_srcRect, _dstRect);
         if (direction.equals(UNKOWN)) {
             return get_route();
