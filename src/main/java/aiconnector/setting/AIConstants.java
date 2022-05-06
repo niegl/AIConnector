@@ -14,11 +14,11 @@ public interface AIConstants {
     /**
      * 矩形图元上锚点间距
      */
-    int POINT_SPACE = 10;
+    int POINT_SPACE = 20;
     /**
      * 线、图元或障碍之间的距离
      */
-    int BARRIER_SPACE = 10;
+    int BARRIER_SPACE = 20;
     int POINT2EDGE_GAP = 10;
     /**
      * 如果存在线冲突，则尝试解决冲突的最大次数
